@@ -183,7 +183,7 @@
                         </div>
                     </div>
 
-                    <button type="submit" class="w-full mt-6 bg-primary dark:bg-slate-700 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 dark:hover:bg-slate-600 transition transform active:scale-95 flex items-center justify-center gap-2">
+                    <button id="btn-submit" type="submit" class="w-full mt-6 bg-primary dark:bg-slate-700 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-slate-800 dark:hover:bg-slate-600 transition transform active:scale-95 flex items-center justify-center gap-2">
                         <i data-lucide="save" class="w-5 h-5"></i> Simpan Transaksi
                     </button>
                 </form>
@@ -408,6 +408,7 @@ function doPost(e) {
         const THEME_KEY = 'bendahara_theme';
         
         let transactions = [];
+        let editingId = null; // State untuk mode edit
         let settings = {
             instansi: 'Organisasi Pemuda',
             tempat: 'Jakarta',
@@ -496,12 +497,19 @@ function doPost(e) {
             lucide.createIcons();
 
             // Special Actions
-            if (viewId === 'input' && param) {
-                // Pre-select radio button
-                const radios = document.getElementsByName('type');
-                radios.forEach(r => {
-                    if (r.value === param) r.checked = true;
-                });
+            if (viewId === 'input') {
+                if (param === 'EDIT_MODE') {
+                    // Jangan reset form jika sedang mode edit
+                } else {
+                    // Reset form jika klik dari menu atau tombol tambah
+                    resetInputForm();
+                    if (param) {
+                        const radios = document.getElementsByName('type');
+                        radios.forEach(r => {
+                            if (r.value === param) r.checked = true;
+                        });
+                    }
+                }
             } else if (viewId === 'report') {
                 renderReport();
             } else if (viewId === 'archive') {
@@ -515,6 +523,37 @@ function doPost(e) {
             }
             
             window.scrollTo(0,0);
+        }
+
+        // --- INPUT FORM HELPER ---
+        function resetInputForm() {
+            editingId = null;
+            document.getElementById('transaction-form').reset();
+            document.getElementById('inp-date').value = new Date().toISOString().split('T')[0];
+            const btn = document.getElementById('btn-submit');
+            btn.innerHTML = '<i data-lucide="save" class="w-5 h-5"></i> Simpan Transaksi';
+            lucide.createIcons();
+        }
+
+        function editTransaction(id) {
+            const tx = transactions.find(t => t.id === id);
+            if (!tx) return;
+
+            editingId = id;
+            document.getElementById('inp-date').value = tx.date;
+            document.getElementById('inp-desc').value = tx.desc;
+            document.getElementById('inp-amount').value = tx.amount;
+            
+            const radios = document.getElementsByName('type');
+            radios.forEach(r => {
+                if (r.value === tx.type) r.checked = true;
+            });
+
+            // Ubah teks tombol
+            const btn = document.getElementById('btn-submit');
+            btn.innerHTML = '<i data-lucide="edit-3" class="w-5 h-5"></i> Update Transaksi';
+            
+            navigate('input', 'EDIT_MODE');
         }
 
         // --- DATA MANAGEMENT ---
@@ -566,32 +605,50 @@ function doPost(e) {
                 }
             }
 
-            const newTx = {
-                id: Date.now(),
-                date,
-                type,
-                desc,
-                amount,
-                proof: proofImage
-            };
+            if (editingId) {
+                // Update Existing
+                const index = transactions.findIndex(t => t.id === editingId);
+                if (index !== -1) {
+                    transactions[index].date = date;
+                    transactions[index].type = type;
+                    transactions[index].desc = desc;
+                    transactions[index].amount = amount;
+                    // Hanya update gambar jika user upload baru
+                    if (proofImage) {
+                        transactions[index].proof = proofImage;
+                    }
+                    alert('Transaksi Berhasil Diperbarui!');
+                }
+                editingId = null;
+            } else {
+                // Create New
+                const newTx = {
+                    id: Date.now(),
+                    date,
+                    type,
+                    desc,
+                    amount,
+                    proof: proofImage
+                };
+                transactions.push(newTx);
+                alert('Transaksi Berhasil Disimpan!');
+            }
 
-            transactions.push(newTx);
             // Sort by date descending
             transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
-            
             saveData();
             
-            e.target.reset();
-            document.getElementById('inp-date').value = new Date().toISOString().split('T')[0]; // Reset date to today
-            alert('Transaksi Berhasil Disimpan!');
+            resetInputForm();
             navigate('dashboard');
         }
 
         function deleteTransaction(id) {
-            if(confirm('Hapus transaksi ini?')) {
+            if(confirm('Hapus transaksi ini? Data dan foto bukti akan hilang permanen.')) {
                 transactions = transactions.filter(t => t.id !== id);
                 saveData();
-                renderReport();
+                // Refresh views depending on where user is
+                if (!document.getElementById('view-report').classList.contains('hidden')) renderReport();
+                if (!document.getElementById('view-archive').classList.contains('hidden')) renderGallery();
             }
         }
 
@@ -666,8 +723,9 @@ function doPost(e) {
                     <td class="px-4 py-3 text-right text-emerald-600 dark:text-emerald-400">${t.type === 'Masuk' ? formatRupiah(t.amount) : '-'}</td>
                     <td class="px-4 py-3 text-right text-rose-600 dark:text-rose-400">${t.type === 'Keluar' ? formatRupiah(t.amount) : '-'}</td>
                     <td class="px-4 py-3 text-right font-medium dark:text-slate-200">${formatRupiah(runningBalance)}</td>
-                    <td class="px-4 py-3 text-center">
-                        <button onclick="deleteTransaction(${t.id})" class="text-rose-500 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    <td class="px-4 py-3 text-center flex justify-center gap-2">
+                        <button onclick="editTransaction(${t.id})" class="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300" title="Edit"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                        <button onclick="deleteTransaction(${t.id})" class="text-rose-500 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300" title="Hapus"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -986,10 +1044,13 @@ function doPost(e) {
                 div.innerHTML = `
                     <img src="${t.proof}" class="w-full h-full object-cover">
                     <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex flex-col justify-between p-2">
-                        <div class="flex justify-end">
+                        <div class="flex justify-between items-start">
                             <a href="${t.proof}" download="bukti_${t.date}_${t.id}.jpg" class="bg-white/20 hover:bg-white/40 text-white p-1.5 rounded-full backdrop-blur-sm transition z-10" title="Download Bukti">
                                 <i data-lucide="download" class="w-4 h-4"></i>
                             </a>
+                            <button onclick="deleteTransaction(${t.id})" class="bg-red-500/80 hover:bg-red-600 text-white p-1.5 rounded-full backdrop-blur-sm transition z-10" title="Hapus">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
                         </div>
                         <div>
                             <p class="text-white text-xs font-bold">${t.date}</p>
